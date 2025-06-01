@@ -20,7 +20,7 @@ Product Store Service with UI
 """
 from flask import jsonify, request, abort
 from flask import url_for  # noqa: F401 pylint: disable=unused-import
-from service.models import Product
+from service.models import Product, Category
 from service.common import status  # HTTP Status Codes
 from . import app
 
@@ -28,12 +28,17 @@ from . import app
 ######################################################################
 # H E A L T H   C H E C K
 ######################################################################
+from flask import Blueprint
+
+api_blueprint = Blueprint('api', __name__)
+
+@api_blueprint.route('/health')
+def health_check():
+    return {"status": "OK"}
+
 @app.route("/health")
-def healthcheck():
-    """Let them know our heart is still beating"""
-    return jsonify(status=200, message="OK"), status.HTTP_200_OK
-
-
+def health():
+    return jsonify({"message": "OK"}), status.HTTP_200_OK
 ######################################################################
 # H O M E   P A G E
 ######################################################################
@@ -98,31 +103,81 @@ def create_products():
 # L I S T   A L L   P R O D U C T S
 ######################################################################
 
-#
-# PLACE YOUR CODE TO LIST ALL PRODUCTS HERE
-#
+######################################################################
+# LIST PRODUCTS
+######################################################################
 
+@app.route("/products", methods=["GET"])
+def list_products():
+    name = request.args.get("name")
+    category = request.args.get("category")
+    available = request.args.get("available")
+
+    products = Product.all()
+
+    if name:
+        products = [p for p in products if p.name == name]
+    if category:
+        products = [p for p in products if p.category.name == category]
+    if available is not None:
+        is_available = available.lower() == "true"
+        products = [p for p in products if p.available == is_available]
+
+    results = [p.serialize() for p in products]
+    return jsonify(results), status.HTTP_200_OK
+
+def not_found(message):
+    response = jsonify(status=404, error="Not Found", message=message)
+    response.status_code = status.HTTP_404_NOT_FOUND
+    return response
 ######################################################################
 # R E A D   A   P R O D U C T
 ######################################################################
 
-#
-# PLACE YOUR CODE HERE TO READ A PRODUCT
-#
+@app.route("/products/<int:product_id>", methods=["GET"])
+def get_products(product_id):
+    """
+    Retrieve a single Product
+    This endpoint will return a Product based on it's id
+    """
+    app.logger.info("Request to Retrieve a product with id [%s]", product_id)
+    product = Product.find(product_id)
+    if not product:
+        abort(status.HTTP_404_NOT_FOUND, f"Product with id '{product_id}' was not found.")
+    app.logger.info("Returning product: %s", product.name)
+    return product.serialize(), status.HTTP_200_OK
 
 ######################################################################
 # U P D A T E   A   P R O D U C T
 ######################################################################
 
-#
-# PLACE YOUR CODE TO UPDATE A PRODUCT HERE
-#
+@app.route("/products/<int:product_id>", methods=["PUT"])
+def update_products(product_id):
+    """
+    Update a Product
+    This endpoint will update a Product based the body that is posted
+    """
+    app.logger.info("Request to Update a product with id [%s]", product_id)
+    check_content_type("application/json")
+    product = Product.find(product_id)
+    if not product:
+        abort(status.HTTP_404_NOT_FOUND, f"Product with id '{product_id}' was not found.")
+    product.deserialize(request.get_json())
+    product.id = product_id
+    product.update()
+    return product.serialize(), status.HTTP_200_OK
 
 ######################################################################
 # D E L E T E   A   P R O D U C T
 ######################################################################
 
+@app.route("/products/<int:product_id>", methods=["DELETE"])
+def delete_product(product_id):
+    app.logger.info("Processing delete for id %s ...", product_id)
+    product = Product.find(product_id)
+    if not product:
+        return not_found(f"Product with id '{product_id}' was not found.")
+    product.delete()
+    return "", status.HTTP_204_NO_CONTENT
 
-#
-# PLACE YOUR CODE TO DELETE A PRODUCT HERE
-#
+    
